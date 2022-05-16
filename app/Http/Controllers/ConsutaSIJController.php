@@ -90,6 +90,53 @@ class ConsutaSIJController extends Controller
         return response()->json($list,200);
 
     }
+
+    /****
+     * REALIZAR CONSULTA DE LA DEPENDENCIA U ORGANO JURISDICCIONAL
+     */
+    public function ConsultaDependenciaXUser(Request $request){
+
+        $consultaSQL = "
+        SELECT DISTINCT i.c_instancia, i.x_nom_instancia 
+        FROM usuario u 
+        INNER JOIN usuario_instancia ui
+        ON (u.c_usuario=ui.c_usuario AND ui.l_activo='S')
+        INNER JOIN instancia i 
+        ON (ui.c_instancia=i.c_instancia AND i.l_ind_baja='N')
+        WHERE u.c_usuario='$request->c_usuario'";
+        $list = DB::connection('myOdbcConnection')->select($consultaSQL); 
+
+        return response()->json($list,200);
+
+    }
+
+    /****
+     * REALIZAR CONSULTA DE ESPECIALIDAD POR USUARIO
+     */
+    public function ConsultaEspecialidadXUser(Request $request){
+
+        $consultaSQL = "
+        SELECT a.c_especialidad,   
+        a.c_usuario,   
+        a.l_activo,   
+        a.c_org_jurisd,   
+        a.f_asignacion,   
+        a.c_distrito,   
+        a.c_provincia,   
+        a.c_sede,
+        'N' l_ind_verifica,
+        b.x_desc_especialidad,
+        a.l_recibe_carga  
+        FROM   usuario_especialidad a NoHoldlock,
+            especialidad         b NoHoldlock  
+        WHERE a.c_especialidad = b.c_especialidad 
+        AND   a.l_activo       = 'S' 
+        AND   a.c_usuario      = '$request->c_usuario'";
+        $list = DB::connection('myOdbcConnection')->select($consultaSQL); 
+
+        return response()->json($list,200);
+
+    }
     
 
 
@@ -1016,6 +1063,479 @@ class ConsutaSIJController extends Controller
             a.l_pendiente  IN ('S','N')  AND 
             a.f_inicio between '$finicio' AND  '$ffin' 
             ORDER BY ie.c_sede ASC, e.c_especialidad DESC, i.x_nom_instancia asc, a.f_inicio ASC" ); 
+        }else{
+            $list['data'] = '';
+        }
+            
+
+        return response()->json($list,200);
+
+    }
+
+
+
+
+    /****
+     * REPORTE ConsultaIngresosXJuz
+     */
+    public function ConsultaIngresosXJuz(Request $request){
+
+        $finicio = substr($request->fecha, 0, 10);
+        $ffin =  substr($request->fecha, 14, 24);
+        if($ffin=='') $ffin = $finicio;
+        $finicio = $finicio.' '.'00:00:00.000';
+        $ffin = $ffin.' '.'23:59:59.000';
+        
+        if($request->c_instancia && $finicio!=''){
+            
+            $list['data'] = DB::connection('myOdbcConnection')->select("
+            DECLARE  @pdt_f_ini DATETIME,
+            @pdt_f_fin DATETIME,
+            @pvi_c_org_jurisd char(2),
+            @pvi_c_especialidad char(2),
+            @pvi_tipo_corte char(1),
+            @pvc_tipo char(1) ,
+            @c_usuario char(50),
+            @c_instancia CHAR (4)
+
+
+            SET @pdt_f_ini = {ts '$finicio'}
+            SET @pdt_f_fin = {ts '$ffin'}
+            SET @pvi_c_especialidad = '$request->c_especialidad'
+            SET @pvi_tipo_corte = ''
+            SET @pvc_tipo = '%' 
+            SET @c_usuario = '$request->c_usuario' 
+            SET @c_instancia = '$request->c_instancia' 
+
+
+            
+            BEGIN
+
+            declare @c_sede_prin char(4)
+            declare @vc_perfil char(2)
+            declare @vc_c_area char(2)
+            declare @i_cfg integer
+            declare @vc_estado char(1)
+
+
+            -----------------------------------
+            -- Obtiene el perfil del usuario --
+            -----------------------------------
+            set @vc_perfil = '11'
+                
+            -----------------------------------
+            -- Obtiene el perfil del usuario --
+            -----------------------------------
+            select @pvi_c_org_jurisd = c_org_jurisd
+                from instancia /*@37*/
+                where c_instancia = @c_instancia
+                
+                
+                    
+            select @vc_c_area = c_area from area_perfil /*@37*/
+                where codper = @vc_perfil
+            /* EXPEDIENTES */
+            select s.f_ingreso,
+                e.n_sec_ingreso,
+                e.n_ano_ingreso,
+                e.x_formato,
+                s.c_instancia,
+                s.n_unico,
+                s.n_incidente,
+                s.n_cant_folios,
+                e.n_cedulas,
+                e.n_ventanilla,
+                n_tasas=isnull(e.n_tasas,0),
+                x_tasa_judicial=isnull(e.x_tasa_judicial,'SIN TASAS'),
+                i.x_nom_instancia,
+                i.n_modulo,
+                i.x_ubicacion_fisica,
+                m.x_desc_motivo_ingreso,
+                s.c_distrito,
+                s.c_provincia,
+                s.c_especialidad,
+                s.c_sede,
+                s.n_expediente,
+                s.n_ano,
+                c_org=(case when i.c_org_jurisd = '01' then 'SU'
+                when i.c_org_jurisd = '02' then 'SP'
+                when i.c_org_jurisd = '03' then 'JR'
+                when i.c_org_jurisd = '04' then 'JM'
+                when i.c_org_jurisd = '05' then 'JP'
+                when i.c_org_jurisd = '06' then 'JN' end),
+                space(50),
+                c_instancia_actual=s.c_instancia,
+                e.n_unico_relacion,
+                c_instancia_origen=e.c_instancia,
+                c_org_jurisd_exp=inst_exp.c_org_jurisd,
+                x_nom_org_jurisd_exp=oj_exp.x_nom_org_jurisd_corto,
+                exp_c_especialidad=e.c_especialidad,
+                x_nom_usuario=isnull((select usuario.x_nom_usuario from usuario /*@37*/
+                where usuario.c_usuario = ag.c_usuario),'No_usuario'),
+                c_usuario=ag.c_usuario,
+                l_ind_digital=s.l_ind_digital, --@40
+                ISNULL(e.c_tipo_alerta,'0') /*@38*/
+                --else (select usuario.x_nom_usuario from usuario where usuario.c_usuario = ag.c_usuario) end), 
+                from instancia_expediente as s /*@37*/
+                ,expediente as e /*@37*/
+                ,motivo_ingreso as m /*@37*/
+                ,instancia as i /*@37*/
+                ,asignado_a as ag /*@37*/
+                ,usuario_instancia as u /*@37*/
+                ,instancia as inst_exp /*@37*/
+                ,organo_jurisdiccional as oj_exp /*@37*/
+                where(s.c_distrito = i.c_distrito)
+                and(s.c_provincia = i.c_provincia)
+                and(s.c_instancia = i.c_instancia)
+                and(s.n_unico = e.n_unico)
+                and(s.n_incidente = e.n_incidente)
+                and(s.c_distrito = u.c_distrito)
+                and(s.c_provincia = u.c_provincia)
+                and(s.c_instancia = u.c_instancia)
+                and s.n_unico = ag.n_unico
+                and s.n_incidente = ag.n_incidente
+                and s.c_instancia = ag.c_instancia
+                and s.f_ingreso = ag.f_ingreso
+                and ag.l_ultimo_instancia = 'S'
+                and(s.f_ingreso between @pdt_f_ini and @pdt_f_fin)
+                and(s.c_motivo_ingreso = m.c_motivo_ingreso)
+                and(m.c_especialidad like @pvi_c_especialidad)
+                and(m.c_org_jurisd = @pvi_c_org_jurisd)
+                and(ISNULL(m.l_ind_visual_corte,'S') = 'S')
+                and((s.l_ind_primero = 'S') or s.c_motivo_ingreso in( '162','166' ) )
+                -- and(s.l_ultimo_c_org = 'S') /*@30*/
+                and(s.l_ingreso in( 'U','P' ) )
+                and(i.c_org_jurisd = @pvi_c_org_jurisd)
+                and(s.c_especialidad like @pvi_c_especialidad)
+                ///and(u.c_usuario = @c_usuario)
+                and(ISNULL(e.l_anulado,'N') = 'N')
+                and(ISNULL(e.l_acumulado,'N') = 'N')
+                and(Isnull(s.c_area,'XX') <> '11') 
+                AND (s.c_instancia=@c_instancia)
+                and(Isnull(s.c_area,'') like(case @vc_perfil when '41' then '36' when '42' then '04' when '48' then '05' else '%' end))
+                and(u.l_activo = 'S')
+                and(not Isnull(e.c_incidente,'') = any(select Isnull(inc.c_incidente,'XXX')
+                from acto_procesal as ap /*@37*/
+                    ,incidente as inc /*@37*/
+                where ap.l_parte = 'S'
+                and ap.l_activo = 'S'
+                and ap.c_incidente *= inc.c_incidente
+                and ap.c_especialidad *= inc.c_especialidad
+                and ap.c_org_jurisd *= inc.c_org_jurisd
+                and ap.c_org_jurisd = @pvi_c_org_jurisd
+                and ap.c_especialidad like @pvi_c_especialidad
+                and ap.c_acto_procesal_gen is null
+                and inc.l_ind_mc = 'D')) 
+                and(e.c_distrito = inst_exp.c_distrito)
+                and(e.c_provincia = inst_exp.c_provincia)
+                and(e.c_instancia = inst_exp.c_instancia)
+                and(inst_exp.c_org_jurisd = oj_exp.c_org_jurisd)
+                and not exists
+                (select * from expediente_detalle as ed
+                where ed.n_unico = e.n_unico
+                and ed.n_incidente = e.n_incidente
+                and ed.l_app_origen = 'W')
+                and(@pvc_tipo = '%' or(isnull(s.l_ind_digital,'N') = @pvc_tipo))
+                and not exists(select 1 from escrito /*@37*/
+                where escrito.c_distrito = e.c_distrito
+                and escrito.c_provincia = e.c_provincia
+                and escrito.c_instancia = e.c_instancia
+                and escrito.n_unico = e.n_unico
+                and escrito.n_incidente = e.n_incidente
+                and escrito.n_sec_digitalizacion = e.n_sec_ingreso
+                and escrito.n_ano_digitalizacion = e.n_ano_ingreso) union
+            /*@33 Fin*/
+            /************************************************************************************
+            OBTIENE LOS EXPEDIENTES QUE SE LE GENERARON GUIA Y FUERON RECEPCIONADOS EN MESA PARTE
+            *************************************************************************************/
+            select s.f_ingreso,
+                e.n_sec_ingreso,
+                e.n_ano_ingreso,
+                e.x_formato,
+                s.c_instancia,
+                s.n_unico,
+                s.n_incidente,
+                s.n_cant_folios,
+                e.n_cedulas,
+                e.n_ventanilla,
+                n_tasas=isnull(e.n_tasas,0),
+                x_tasa_judicial=isnull(e.x_tasa_judicial,'SIN TASAS'),
+                i.x_nom_instancia,
+                i.n_modulo,
+                i.x_ubicacion_fisica,
+                m.x_desc_motivo_ingreso,
+                s.c_distrito,
+                s.c_provincia,
+                s.c_especialidad,
+                s.c_sede,
+                s.n_expediente,
+                s.n_ano,
+                c_org=(case when i.c_org_jurisd = '01' then 'SU'
+                when i.c_org_jurisd = '02' then 'SP'
+                when i.c_org_jurisd = '03' then 'JR'
+                when i.c_org_jurisd = '04' then 'JM'
+                when i.c_org_jurisd = '05' then 'JP'
+                when i.c_org_jurisd = '06' then 'JN' end),
+                space(50),
+                c_instancia_actual=s.c_instancia,
+                e.n_unico_relacion,
+                c_instancia_origen=e.c_instancia,
+                c_org_jurisd_exp=inst_exp.c_org_jurisd,
+                x_nom_org_jurisd_exp=oj_exp.x_nom_org_jurisd_corto,
+                exp_c_especialidad=e.c_especialidad,
+                x_nom_usuario=isnull((select usuario.x_nom_usuario from usuario
+                where usuario.c_usuario = ag.c_usuario),'No_usuario'),
+                c_usuario=ag.c_usuario,
+                l_ind_digital=s.l_ind_digital, --@40
+                ISNULL(e.c_tipo_alerta,'0') /*@38*/
+                from instancia_expediente as s /*@37*/
+                ,expediente as e /*@37*/
+                ,motivo_ingreso as m /*@37*/
+                ,instancia as i /*@37*/
+                ,asignado_a as ag /*@37*/
+                ,usuario_instancia as u /*@37*/
+                ,instancia as inst_exp /*@37*/
+                ,organo_jurisdiccional as oj_exp /*@37*/
+                where(s.c_distrito = i.c_distrito)
+                and(s.c_provincia = i.c_provincia)
+                and(s.c_instancia = i.c_instancia)
+                and(s.n_unico = e.n_unico)
+                and(s.n_incidente = e.n_incidente)
+                and(s.c_distrito = u.c_distrito)
+                and(s.c_provincia = u.c_provincia)
+                and(s.c_instancia = u.c_instancia)
+                and s.n_unico = ag.n_unico
+                and s.n_incidente = ag.n_incidente
+                and s.c_instancia = ag.c_instancia
+                and s.f_ingreso = ag.f_ingreso
+                and ag.l_ultimo_instancia = 'S'
+                and(s.f_ingreso between @pdt_f_ini and @pdt_f_fin)
+                and(s.c_motivo_ingreso = m.c_motivo_ingreso)
+                and(m.c_especialidad like @pvi_c_especialidad)
+                and(m.c_org_jurisd = @pvi_c_org_jurisd)
+                and(ISNULL(m.l_ind_visual_corte,'S') = 'S')
+                and(s.l_ind_primero is null)
+                and(s.l_ingreso = 'I')
+                and(i.c_org_jurisd = @pvi_c_org_jurisd)
+                and(s.c_especialidad like @pvi_c_especialidad)
+                ///and(u.c_usuario = @c_usuario)
+                and(ISNULL(e.l_anulado,'N') = 'N')
+                and(ISNULL(e.l_acumulado,'N') = 'N')
+                AND (s.c_instancia=@c_instancia)
+                and exists(select * from guia_entrega_mp_det as g /*@37*/
+                where(g.n_unico = s.n_unico)
+                and(g.n_incidente = s.n_incidente)
+                and(g.l_ind_recepcion = 'S')
+                and(g.l_activo = 'S'))
+                and(Isnull(s.c_area,'') like(case @vc_perfil when '41' then '36' when '42' then '04' when '48' then '05' else '%' end))
+                --@17 - INI
+                and(u.l_activo = 'S')
+                --@17 - FIN 
+                and(e.c_distrito = inst_exp.c_distrito)
+                and(e.c_provincia = inst_exp.c_provincia)
+                and(e.c_instancia = inst_exp.c_instancia)
+                and(inst_exp.c_org_jurisd = oj_exp.c_org_jurisd)
+                /*@39  RNIMA INICIO*/
+                and not exists
+                (select * from expediente_detalle as ed
+                where ed.n_unico = e.n_unico
+                and ed.n_incidente = e.n_incidente
+                and ed.l_app_origen = 'W')
+                /*@39  RNIMA FIN*/
+                --@40
+                and(@pvc_tipo = '%' or(isnull(s.l_ind_digital,'N') = @pvc_tipo))
+                --@40    
+                /*@33 Ini*/
+                and not exists(select 1 from escrito /*@37*/
+                where escrito.c_distrito = e.c_distrito
+                and escrito.c_provincia = e.c_provincia
+                and escrito.c_instancia = e.c_instancia
+                and escrito.n_unico = e.n_unico
+                and escrito.n_incidente = e.n_incidente
+                and escrito.n_sec_digitalizacion = e.n_sec_ingreso
+                and escrito.n_ano_digitalizacion = e.n_ano_ingreso) union
+
+            select h.f_ingreso_acto,
+                h.n_sec_ingreso,
+                h.n_ano_ingreso,
+                x_formato=(SELECT e.x_formato FROM expediente e WHERE e.n_unico=h.n_unico AND e.n_incidente=h.n_incidente),
+                c_instancia=(select x.c_instancia
+                from instancia_expediente as x /*@37*/
+                where x.n_unico = h.n_unico
+                and x.n_incidente = h.n_incidente
+                and x.c_distrito = h.c_distrito
+                and x.c_provincia = h.c_provincia
+                and x.c_instancia = h.c_instancia
+                and x.f_ingreso = h.f_ingreso),
+                h.n_unico,
+                h.n_incidente,
+                h.n_fojas,
+                h.n_cedulas,
+                h.n_ventanilla,
+                n_tasas=isnull(h.n_tasas,0),
+                x_tasa_judicial=isnull(h.x_arancel,'SIN TASAS'),
+                i.x_nom_instancia,
+                i.n_modulo,
+                i.x_ubicacion_fisica,
+                a.x_desc_acto_procesal,
+                s.c_distrito,
+                s.c_provincia,
+                s.c_especialidad,
+                s.c_sede,
+                s.n_expediente,
+                s.n_ano,
+                c_org=(case when i.c_org_jurisd = '01' then 'SU'
+                when i.c_org_jurisd = '02' then 'SP'
+                when i.c_org_jurisd = '03' then 'JR'
+                when i.c_org_jurisd = '04' then 'JM'
+                when i.c_org_jurisd = '05' then 'JP'
+                when i.c_org_jurisd = '06' then 'JN' end),
+                space(50),
+                c_instancia_actual=h.c_instancia,
+                e.n_unico_relacion,
+                c_instancia_origen=e.c_instancia,
+                c_org_jurisd_exp=inst_exp.c_org_jurisd,
+                x_nom_org_jurisd_exp=oj_exp.x_nom_org_jurisd_corto,
+                exp_c_especialidad=e.c_especialidad,
+                x_nom_usuario=isnull((select usuario.x_nom_usuario from usuario /*@37*/
+                where usuario.c_usuario = ag.c_usuario),'No_usuario'),
+                c_usuario=ag.c_usuario,
+                l_ind_digital=s.l_ind_digital, --@40
+                ISNULL(e.c_tipo_alerta,'0') /*@38*/
+                from escrito as h /*@37*/
+                ,instancia_expediente as s /*@37*/
+                ,instancia as i /*@37*/
+                ,asignado_a as ag /*@37*/
+                ,acto_procesal as a /*@37*/
+                ,expediente as e /*@37*/
+                ,usuario as u /*@37*/
+                ,usuario_instancia as n /*@37*/
+                ,usuario as ui /*@37*/ /*,
+            instancia_area       ia noholdlock*/
+                ,instancia as inst_exp /*@37*/
+                ,organo_jurisdiccional as oj_exp /*@37*/
+                where(s.n_unico = e.n_unico)
+                and(s.n_incidente = e.n_incidente)
+                and(h.c_distrito = s.c_distrito)
+                and(h.c_provincia = s.c_provincia)
+                and(h.c_instancia = s.c_instancia)
+                and(h.n_unico = s.n_unico)
+                and(h.n_incidente = s.n_incidente)
+                and(h.f_ingreso = s.f_ingreso)
+                and(h.l_visualizacion = 'S')
+                and(h.c_distrito = i.c_distrito)
+                and(h.c_provincia = i.c_provincia)
+                and(h.c_instancia = i.c_instancia)
+                and(s.c_distrito = n.c_distrito)
+                and(s.c_provincia = n.c_provincia)
+                and(s.c_instancia = n.c_instancia)
+                and(i.c_org_jurisd = @pvi_c_org_jurisd)
+                and s.n_unico = ag.n_unico
+                and s.n_incidente = ag.n_incidente
+                and s.c_instancia = ag.c_instancia
+                and s.f_ingreso = ag.f_ingreso
+                and ag.l_ultimo_instancia = 'S'
+                and(h.f_ingreso_acto between @pdt_f_ini and @pdt_f_fin)
+                ///and(n.c_usuario = @c_usuario)
+                and(h.c_acto_procesal = a.c_acto_procesal)
+                and(ISNULL(h.l_estado,'@') <> 'A')
+                AND (s.c_instancia=@c_instancia)
+                and(h.l_app_origen = 'V' or h.l_app_origen is null or h.l_app_origen is null) /*@35*/
+                and(h.c_acto_procesal = any(select b.c_acto_procesal
+                from acto_procesal as b /*@37*/
+                where b.l_parte = 'S'
+                /*b.l_pedido_tramite = 'N'  AND*/ --@19
+                and b.c_org_jurisd = @pvi_c_org_jurisd
+                and b.c_especialidad like @pvi_c_especialidad
+                and ISNULL(l_ind_visual_corte,'S') = 'S'))
+                and(h.c_usuario = u.c_usuario)
+                and(ui.c_usuario = n.c_usuario) /*@23 Se agrgo join con usurio instancia*/
+                and((ui.c_perfil = '11') --Jefe de CDG  /*@23 --INI se cambio perfil por la tabla usuario instancia--*/
+                or(ui.c_perfil = '10') --CDG
+                or(ui.c_perfil = '15') --Supervisor de CDG 
+                or(ui.c_perfil = '39') --Mesa de Partes Reos Libres  
+                or(ui.c_perfil = '40') --Mesa de Partes Reos Carcel
+                or(ui.c_perfil = '42') --Jefe de MP Reos Libres
+                or(ui.c_perfil = '48') --Jefe de MP Reos Carcel
+                or(ui.c_perfil = '26') --Jefe de Mesa de Partes - Sala           
+                or(ui.c_perfil = (case when @pvi_c_org_jurisd = '02' and @pvi_c_especialidad = 'CA' then '28' else '' end))) -- CDM Sala
+                and(n.l_activo = 'S')
+                --@17 - FIN
+                and(e.c_distrito = inst_exp.c_distrito)
+                and(e.c_provincia = inst_exp.c_provincia)
+                and(e.c_instancia = inst_exp.c_instancia)
+                and(inst_exp.c_org_jurisd = oj_exp.c_org_jurisd)
+                --@40  
+                and(@pvc_tipo = '%' or(isnull(s.l_ind_digital,'N') = @pvc_tipo)) union
+            --@40   
+            /* PEDIDOS ESPECIALES */
+            select p.f_ingreso_pedido,
+                p.n_secuencia,
+                p.n_ano,
+                '',
+                p.c_instancia,
+                0,
+                0,
+                p.n_fojas,
+                p.n_cedulas,
+                p.n_ventanilla,
+                n_tasas=isnull(p.n_tasas,0),
+                x_tasa_judicial=isnull(p.x_tasa_judicial,'SIN TASAS'),
+                i.x_nom_instancia,
+                i.n_modulo,
+                i.x_ubicacion_fisica,
+                'Pedido Especial',
+                '',
+                '',
+                p.c_especialidad,
+                '',
+                0,
+                0,
+                '',
+                p.x_nro_expediente,
+                c_instancia_actual=p.c_instancia,
+                0,
+                c_instancia_origen=p.c_instancia,
+                c_org_jurisd_exp=i.c_org_jurisd,
+                '',
+                exp_c_especialidad=p.c_especialidad,
+                x_nom_usuario=(select usuario.x_nom_usuario from usuario /*@37*/
+                where usuario.c_usuario = gr.c_usuario),
+                c_usuario=gr.c_usuario,
+                l_ind_digital='', --@40
+                c_tipo_alerta='0' /*@38*/
+                from pedido_especial as p /*@37*/
+                join instancia as i /*@37*/
+                on p.c_distrito = i.c_distrito
+                and p.c_provincia = i.c_provincia
+                and p.c_instancia = i.c_instancia
+                join usuario_instancia as u /*@37*/
+                on u.c_distrito = i.c_distrito
+                and u.c_provincia = i.c_provincia
+                and u.c_instancia = i.c_instancia
+                left outer join grupo_matriz_relator as gr /*@37*/
+                on(year(p.f_ingreso_pedido) = gr.anio
+                and month(p.f_ingreso_pedido) = gr.mes
+                and gr.c_grupo_delito = 7
+                and(select case DatePart(weekday,p.f_ingreso_pedido) when 2 then 'LUNES'
+                    when 3 then 'MARTES'
+                    when 4 then 'MIERCOLES'
+                    when 5 then 'JUEVES'
+                    when 6 then 'VIERNES'
+                    else 'LUNES'
+                    end) = gr.nom_dia)
+                WHERE ///(u.c_usuario = @c_usuario) AND
+                (i.c_instancia=@c_instancia)
+                and(p.f_ingreso_pedido between @pdt_f_ini and @pdt_f_fin)
+                and(i.c_org_jurisd = @pvi_c_org_jurisd)
+                and(p.c_especialidad like @pvi_c_especialidad)
+                and(ISNULL(p.l_activo,'S') <> 'N')
+                and(u.l_activo = 'S')
+                --@40  
+                and('N' = (case when @pvc_tipo = '%' then 'N' else @pvc_tipo end))
+
+            end
+             " ); 
         }else{
             $list['data'] = '';
         }

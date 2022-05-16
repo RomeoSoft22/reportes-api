@@ -33,6 +33,8 @@ Route::apiResource('user', UserController::class);
 Route::post('ConsultaDistrito', [ConsutaSIJController::class, 'ConsultaDistrito']);
 Route::post('ConsultaSede', [ConsutaSIJController::class, 'ConsultaSede']);
 Route::post('ConsultaDependencia', [ConsutaSIJController::class, 'ConsultaDependencia']);
+Route::post('ConsultaDependenciaXUser', [ConsutaSIJController::class, 'ConsultaDependenciaXUser']);
+Route::post('ConsultaEspecialidadXUser', [ConsutaSIJController::class, 'ConsultaEspecialidadXUser']);
 //reportes
 Route::post('ConsultaLaboral', [ConsutaSIJController::class, 'ConsultaLaboral']);
 Route::post('ConsultaNotificar', [ConsutaSIJController::class, 'ConsultaNotificar']);
@@ -47,6 +49,7 @@ Route::post('ConsultaProduccionConsolidado', [ConsutaSIJController::class, 'Cons
 Route::post('ConsultaProduccionDetalle', [ConsutaSIJController::class, 'ConsultaProduccionDetalle']);
 Route::post('ConsultaAudiencia', [ConsutaSIJController::class, 'ConsultaAudiencia']);
 Route::post('ConsultaInteroperabilidad', [ConsutaSIJController::class, 'ConsultaInteroperabilidad']);
+Route::post('ConsultaIngresosXJuz', [ConsutaSIJController::class, 'ConsultaIngresosXJuz']);
 //adicionales sistemas diversos
 Route::post('ConsultaOrientacion', [ConsutaSIJController::class, 'ConsultaOrientacion']);
 Route::post('ConsultaMV', [ConsutaSIJController::class, 'ConsultaMV']);

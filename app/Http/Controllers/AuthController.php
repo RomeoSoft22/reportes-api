@@ -85,17 +85,17 @@ class AuthController extends Controller
                 $consulta = DB::table('reportes.mae_usuario')->where('c_usuario',$usuario)->first();
                 $user = ModelsUser::where('c_usuario',$usuario)->first();
 
-                //validacion del usuario ACTIVO
-                if($user->l_activo!='S'){
-                    return response([
-                        'status' => 'error',
-                        'error' => 'invalid.credentials',
-                        'msg' => 'Invalid Credentials.'
-                    ], 401);
-                }
-                
-                
                 if($consulta != null){
+
+                    //validacion del usuario ACTIVO
+                    if($user->l_activo!='S'){
+                        return response([
+                            'status' => 'error',
+                            'error' => 'invalid.credentials',
+                            'msg' => 'Invalid Credentials.'
+                        ], 401);
+                    }
+
                     $clave='123456';
                     //actualiza fecha de ingreso
                     $user->f_ultimo_ing = now();
@@ -103,6 +103,7 @@ class AuthController extends Controller
                     $user->c_aud_uidred = $usuario;
                     $user->b_aud = 'U';
                     $user->save();
+                    
                 }else{
 
                     $query = "nextval('reportes.mae_usuario_seq') as nxt";
